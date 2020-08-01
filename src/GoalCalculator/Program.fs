@@ -63,12 +63,17 @@ let main argv =
 
         result
         |> flip Seq.map <| fun g ->
+            let currentGoal =
+                g.Category.Goal
+                |> Option.map (sprintf "%7.2f")
+                |> Option.defaultValue "   /   "
             let paddedName = g.Category.Name.PadRight(categoryNameLength)
             sprintf
-                "%s Average: %7.2f Goal: %7.2f Adjustment: %7.2f"
+                "%s Average: %7.2f Goal: %7.2f Current: %s Adjustment: %7.2f"
                 paddedName
                 g.AverageAssignment
                 g.PeakAssignment
+                currentGoal
                 g.Adjustment
         |> Seq.iter (printfn "%s")
 

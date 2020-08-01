@@ -8,7 +8,12 @@ open YnabApi
 [<Measure>] type money
 [<Measure>] type month
 
-type Category = { Id : Guid; Name : string; Balance : decimal<money> }
+type Category = {
+    Id : Guid
+    Name : string
+    Balance : decimal<money>
+    Goal : decimal<money> option
+}
 
 type CategoryGoal = {
     Category : Category
@@ -152,6 +157,10 @@ let parseCategories categoryGroups =
             Id = c.Id
             Name = c.Name
             Balance = parseAmount c.Balance
+            Goal =
+                if c.GoalType = Some "MF"
+                then c.GoalTarget |> parseAmount |> Some
+                else None
         }
     |> Seq.map (fun c -> c.Id, c)
     |> Map.ofSeq
