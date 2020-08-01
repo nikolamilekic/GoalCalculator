@@ -61,6 +61,10 @@ let main argv =
         let categoryNameLength =
             result |> Seq.map (fun x -> x.Category.Name.Length) |> Seq.max
 
+        printfn
+            "%s Average Goal    Current Adjustment"
+            ("".PadRight(categoryNameLength))
+
         result
         |> flip Seq.map <| fun g ->
             let currentGoal =
@@ -69,7 +73,7 @@ let main argv =
                 |> Option.defaultValue "   /   "
             let paddedName = g.Category.Name.PadRight(categoryNameLength)
             sprintf
-                "%s Average: %7.2f Goal: %7.2f Current: %s Adjustment: %7.2f"
+                "%s %7.2f %7.2f %s %7.2f"
                 paddedName
                 g.AverageAssignment
                 g.PeakAssignment

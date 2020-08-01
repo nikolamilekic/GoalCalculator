@@ -13,6 +13,7 @@ type Category = {
     Name : string
     Balance : decimal<money>
     Goal : decimal<money> option
+    SortIndex : int
 }
 
 type CategoryGoal = {
@@ -89,6 +90,7 @@ let calculateGoals categories transactions =
     |> flip Seq.map <|fun (cId, ts) ->
         categories |> Map.tryFind cId |> Option.map (fun c -> c, ts)
     |> Seq.onlySome
+    |> Seq.sortBy (fun (c, _) -> c.SortIndex)
     |> flip Seq.map <| fun (category, transactions) ->
         let fundsToReserve =
             transactions
@@ -152,15 +154,14 @@ let parseAmount : _ -> decimal<money> =
 let parseCategories categoryGroups =
     categoryGroups
     |> Seq.collect (fun (g : CategoryGroups.CategoryGroup) -> g.Categories)
-    |> flip Seq.map <| fun c ->
+    |> flip Seq.mapi <| fun sortIndex c ->
         {
             Id = c.Id
             Name = c.Name
             Balance = parseAmount c.Balance
-            Goal =
-                if c.GoalType = Some "MF"
-                then c.GoalTarget |> parseAmount |> Some
-                else None
+            Goal = c.GoalType
+                   |> Option.map (fun _ -> c.GoalTarget |> parseAmount)
+            SortIndex = sortIndex
         }
     |> Seq.map (fun c -> c.Id, c)
     |> Map.ofSeq
