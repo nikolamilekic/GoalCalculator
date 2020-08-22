@@ -3,18 +3,22 @@ module GoalCalculator
 open System
 open Microsoft.FSharp.Core
 open Milekic.YoLo
+open FSharpPlus
+open FSharpPlus.Lens
+
 open YnabApi
 
 [<Measure>] type money
 [<Measure>] type month
 
 type Category = {
-    Id : Guid
     Name : string
     Balance : decimal<money>
     Goal : decimal<money> option
-    SortIndex : int
+    SortField : IComparable
 }
+module Category =
+    let inline _sortField f s = s.SortField |> f <&> fun v -> { s with SortField = v }
 
 type CategoryGoal = {
     Category : Category
@@ -27,80 +31,49 @@ type CategoryGoal = {
     Adjustment : decimal<money>
 }
 
-type RepetitionRule =
-    | Never
-    | Daily
-    | Weekly
-    | EveryOtherWeek
-    | TwiceAMonth
-    | Every4Weeks
-    | Monthly
-    | EveryOtherMonth
-    | Every3Months
-    | Every4Months
-    | TwiceAYear
-    | Yearly
-    | EveryOtherYear
-
 type Transaction = {
     Date : DateTime
     Amount : decimal<money>
-    Category : Guid
-    RepetitionRule : RepetitionRule
+    Category : Category
+    RepetitionRule : (DateTime -> DateTime) option
 }
+module Transaction =
+    let inline _date f s = s.Date |> f <&> fun v -> { s with Date = v }
+    let inline _amount f s = s.Amount |> f <&> fun v -> { s with Amount = v }
+    let inline _category f s = s.Category |> f <&> fun v -> { s with Category = v }
+    let inline _total f = items << _amount <| f
 
 let getStartOfMonth (x : DateTime) = DateTime(x.Year, x.Month, 1)
-let expandTransaction transaction =
-    let increment =
-        match transaction.RepetitionRule with
-        | Never -> None
-        | Daily -> Some (fun (x : DateTime) -> x.AddDays 1.0)
-        | Weekly -> Some (fun (x : DateTime) -> x.AddDays 7.0)
-        | EveryOtherWeek -> Some (fun (x : DateTime) -> x.AddDays 14.0)
-        | TwiceAMonth -> Some (fun (x : DateTime) -> x.AddDays 15.0)
-        | Every4Weeks -> Some (fun (x : DateTime) -> x.AddDays 28.0)
-        | Monthly -> Some (fun (x : DateTime) -> x.AddMonths 1)
-        | EveryOtherMonth -> Some (fun (x : DateTime) -> x.AddMonths 2)
-        | Every3Months -> Some (fun (x : DateTime) -> x.AddMonths 3)
-        | Every4Months -> Some (fun (x : DateTime) -> x.AddMonths 4)
-        | TwiceAYear -> Some (fun (x : DateTime) -> x.AddMonths 6)
-        | Yearly -> Some (fun (x : DateTime) -> x.AddYears 1)
-        | EveryOtherYear -> Some (fun (x : DateTime) -> x.AddYears 2)
-
-    match increment with
-    | None -> seq { transaction }
-    | Some increment ->
-        let rec inner current = seq {
-            yield current
-            yield! { current with Date = increment current.Date } |> inner
-        }
-        inner transaction
-
 let expandTransactions lastRelevantDate =
-    Seq.collect <| fun transaction ->
-        expandTransaction transaction
-        |> Seq.takeWhile (fun x -> x.Date < lastRelevantDate)
-
-let calculateGoals categories transactions =
+    bind <| fun transaction ->
+        transaction.RepetitionRule
+        |>> fun rule ->
+            let rec inner current = seq {
+                yield current
+                yield! inner (current |> Transaction._date %-> rule)
+            }
+            inner transaction
+        |> Option.defaultValue (result transaction)
+        |> takeWhile (view Transaction._date >> fun d -> d < lastRelevantDate)
+    >> toList
+let calculateGoals (transactions : _ seq) =
     let nextMonthStart = DateTime.Now.Date.AddMonths 1 |> getStartOfMonth
     let lastRelevantDate = nextMonthStart.AddYears 1
 
     expandTransactions lastRelevantDate transactions
-    |> Seq.groupBy (fun x -> x.Category)
-    |> flip Seq.map <|fun (cId, ts) ->
-        categories |> Map.tryFind cId |> Option.map (fun c -> c, ts)
-    |> Seq.onlySome
-    |> Seq.sortBy (fun (c, _) -> c.SortIndex)
-    |> flip Seq.map <| fun (category, transactions) ->
+    |> toSeq
+    |> groupBy (view Transaction._category)
+    |> sortBy (view (_1 << Category._sortField))
+    |> flip map <| fun ((category : Category), (transactions : Transaction seq)) ->
         let fundsToReserve =
             transactions
-            |> Seq.where (fun x -> x.Date < nextMonthStart)
-            |> Seq.sumBy (fun x -> x.Amount)
+            |> filter (view Transaction._date >> fun d -> d < nextMonthStart)
+            |> view Transaction._total
         let available = category.Balance - fundsToReserve
 
         let relevantTransactions =
             transactions
-            |> Seq.where (fun x -> x.Date >= nextMonthStart)
+            |> filter (view Transaction._date >> fun d -> d >= nextMonthStart)
 
         // if category.Name = "Operations" then
         //     relevantTransactions
@@ -109,14 +82,13 @@ let calculateGoals categories transactions =
         //         printfn "%A %7.2f" t.Date t.Amount)
 
         let averageAssignment =
-            (relevantTransactions |> Seq.sumBy (fun x -> x.Amount))
-            / 12m<month>
+            (relevantTransactions^.Transaction._total) / 12m<month>
         let allocations =
             relevantTransactions
-            |> Seq.groupBy (fun x -> x.Date |> getStartOfMonth)
-            |> Seq.sortBy fst
-            |> Seq.mapFold
-                (fun (previousMonths) (budgetDate, transactions) ->
+            |> groupBy (view Transaction._date >> getStartOfMonth)
+            |> sortBy fst
+            |> fold
+                (fun (allocations, previousMonths) (budgetDate, transactions) ->
                     let monthsSinceStart : decimal<month> =
                         (budgetDate - nextMonthStart).TotalDays / 30.0
                         |> fun x -> Math.Round (decimal x) + 1m
@@ -127,8 +99,8 @@ let calculateGoals categories transactions =
                     let perMonth =
                         (totalFundsNeeded - available)
                         / monthsSinceStart
-                    (monthsSinceStart, perMonth), totalFundsNeeded)
-                0m<money>
+                    (monthsSinceStart, perMonth)::allocations, totalFundsNeeded)
+                ([], 0m<money>)
             |> fst
 
         // if category.Name = "Operations" then
@@ -136,7 +108,7 @@ let calculateGoals categories transactions =
         //     |> Seq.iter (fun (month, allocation) ->
         //         printfn "%3.0f %7.2f" (month) allocation)
 
-        let (monthsUntilPeak, peakAssignment) = allocations |> Seq.maxBy snd
+        let (monthsUntilPeak, peakAssignment) = allocations |> maxBy snd
 
         {
             Category = category
@@ -153,52 +125,48 @@ let parseAmount : _ -> decimal<money> =
 
 let parseCategories categoryGroups =
     categoryGroups
-    |> Seq.collect (fun (g : CategoryGroups.CategoryGroup) -> g.Categories)
-    |> flip Seq.mapi <| fun sortIndex c ->
+    >>= (fun (g : CategoryGroups.CategoryGroup) -> g.Categories)
+    |> flip mapi <| fun sortIndex c ->
+        c.Id,
         {
-            Id = c.Id
             Name = c.Name
             Balance = parseAmount c.Balance
             Goal = c.GoalType
                    |> Option.map (fun _ -> c.GoalTarget |> parseAmount)
-            SortIndex = sortIndex
+            SortField = sortIndex
         }
-    |> Seq.map (fun c -> c.Id, c)
     |> Map.ofSeq
 
 let parseRepetitionRule = function
-    | "never" -> Never
-    | "daily" -> Daily
-    | "weekly" -> Weekly
-    | "everyOtherWeek" -> EveryOtherWeek
-    | "twiceAMonth" -> TwiceAMonth
-    | "every4Weeks" -> Every4Weeks
-    | "monthly" -> Monthly
-    | "everyOtherMonth" -> EveryOtherMonth
-    | "every3Months" -> Every3Months
-    | "every4Months" -> Every4Months
-    | "twiceAYear" -> TwiceAYear
-    | "yearly" -> Yearly
-    | "everyOtherYear" -> EveryOtherYear
+    | "never" -> None
+    | "daily" -> Some (fun (x : DateTime) -> x.AddDays 1.0)
+    | "weekly" -> Some (fun (x : DateTime) -> x.AddDays 7.0)
+    | "everyOtherWeek" -> Some (fun (x : DateTime) -> x.AddDays 14.0)
+    | "twiceAMonth" -> Some (fun (x : DateTime) -> x.AddDays 15.0)
+    | "every4Weeks" -> Some (fun (x : DateTime) -> x.AddDays 28.0)
+    | "monthly" -> Some (fun (x : DateTime) -> x.AddMonths 1)
+    | "everyOtherMonth" -> Some (fun (x : DateTime) -> x.AddMonths 2)
+    | "every3Months" -> Some (fun (x : DateTime) -> x.AddMonths 3)
+    | "every4Months" -> Some (fun (x : DateTime) -> x.AddMonths 4)
+    | "twiceAYear" -> Some (fun (x : DateTime) -> x.AddMonths 6)
+    | "yearly" -> Some (fun (x : DateTime) -> x.AddYears 1)
+    | "everyOtherYear" -> Some (fun (x : DateTime) -> x.AddYears 2)
     | x -> failwithf "Unsupported repetition rule %s" x
 
-let parseTransactions transactions =
-    transactions
-    |> flip Seq.collect <| fun (t : ScheduledTransactions.ScheduledTransaction) ->
-        let baseTransaction = {
+let parseTransactions categories =
+    bind <| fun (t : ScheduledTransactions.ScheduledTransaction) ->
+        let makeTransaction categoryId = {
             Date = t.DateNext
             Amount = parseAmount t.Amount * -1m
-            Category = t.CategoryId
+            Category = Map.find categoryId categories
             RepetitionRule = parseRepetitionRule t.Frequency
         }
 
         if t.CategoryName <> "Split (Multiple Categories)..." then
-            seq { baseTransaction }
+            result (makeTransaction t.CategoryId)
         else
             t.Subtransactions
-            |> Seq.where (fun st -> st.Amount < 0)
-            |> flip Seq.map <| fun st -> {
-                baseTransaction with
-                    Amount = parseAmount st.Amount * -1m
-                    Category = st.CategoryId
-            }
+            |> filter (fun st -> st.Amount < 0)
+            |> flip map <| fun st ->
+                makeTransaction st.CategoryId
+                |> Transaction._amount .-> (parseAmount st.Amount * -1m)

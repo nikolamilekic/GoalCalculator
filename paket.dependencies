@@ -9,3 +9,4 @@ nuget FSharp.Data
 nuget Milekic.YoLo prerelease
 nuget Argu
 nuget GitInfo = 2.0.26
+nuget FSharpPlus

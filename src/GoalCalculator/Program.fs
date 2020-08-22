@@ -4,6 +4,7 @@ open System
 open System.IO
 open Argu
 open Milekic.YoLo
+open FSharpPlus
 
 [<NoComparison; NoEquality>]
 type Argument =
@@ -60,24 +61,19 @@ let main argv =
 
         let transactions =
             YnabApi.getScheduledTransactions headers budgetId
-            |> GoalCalculator.parseTransactions
+            |> GoalCalculator.parseTransactions categories
 
-        let result =
-            GoalCalculator.calculateGoals categories transactions |> Seq.toList
-
+        let result = GoalCalculator.calculateGoals transactions |> toList
         let categoryNameLength =
-            result |> Seq.map (fun x -> x.Category.Name.Length) |> Seq.max
+            result |> map (fun x -> x.Category.Name.Length) |> maximum
 
         printfn
             "%s Average Goal    Current Adjustment"
             ("".PadRight(categoryNameLength))
 
         result
-        |> flip Seq.map <| fun g ->
-            let currentGoal =
-                g.Category.Goal
-                |> Option.map (sprintf "%7.2f")
-                |> Option.defaultValue "   /   "
+        |> flip map <| fun g ->
+            let currentGoal = g.Category.Goal |> option (sprintf "%7.2f") "   /   "
             let paddedName = g.Category.Name.PadRight(categoryNameLength)
             sprintf
                 "%s %7.2f %7.2f %s %7.2f"
@@ -86,7 +82,7 @@ let main argv =
                 g.PeakAssignment
                 currentGoal
                 g.Adjustment
-        |> Seq.iter (printfn "%s")
+        |> iter (printfn "%s")
 
         0
     with
