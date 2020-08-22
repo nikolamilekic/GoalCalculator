@@ -30,12 +30,8 @@ Directory.CreateDirectory(Path.GetDirectoryName(configFilePath)) |> ignore
 [<EntryPoint>]
 let main argv =
     printfn
-        "Version: %s.%s.%s+%s%s"
-        ThisAssembly.Git.SemVer.Major
-        ThisAssembly.Git.SemVer.Minor
-        ThisAssembly.Git.SemVer.Patch
-        ThisAssembly.Git.Commit
-        (if ThisAssembly.Git.IsDirty then "-DIRTY" else "")
+        "GoalCalculator. Version: %s"
+        (Metadata.getCallingAssemblyInformationalVersion())
 
     try
         let arguments =
