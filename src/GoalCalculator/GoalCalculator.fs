@@ -44,27 +44,27 @@ module Transaction =
     let inline _total f = items << _amount <| f
 
 let getStartOfMonth (x : DateTime) = DateTime(x.Year, x.Month, 1)
-let expandTransactions lastRelevantDate =
-    bind <| fun transaction ->
+let expandTransactions lastRelevantDate (transactions : _ seq) =
+    transactions
+    >>= fun transaction ->
         transaction.RepetitionRule
-        |>> fun rule ->
-            let rec inner current = seq {
-                yield current
-                yield! inner (current |> Transaction._date %-> rule)
-            }
-            inner transaction
-        |> Option.defaultValue (result transaction)
+        |> option
+            (fun rule ->
+                let rec inner current = monad.plus {
+                    return current
+                    return! inner (current |> Transaction._date %-> rule)
+                }
+                inner transaction)
+            (result transaction)
         |> takeWhile (view Transaction._date >> fun d -> d < lastRelevantDate)
-    >> toList
-let calculateGoals (transactions : _ seq) =
+let calculateGoals transactions =
     let nextMonthStart = DateTime.Now.Date.AddMonths 1 |> getStartOfMonth
     let lastRelevantDate = nextMonthStart.AddYears 1
 
     expandTransactions lastRelevantDate transactions
-    |> toSeq
     |> groupBy (view Transaction._category)
     |> sortBy (view (_1 << Category._sortField))
-    |> flip map <| fun ((category : Category), (transactions : Transaction seq)) ->
+    |> flip map <| fun (category, transactions) ->
         let fundsToReserve =
             transactions
             |> filter (view Transaction._date >> fun d -> d < nextMonthStart)
@@ -123,9 +123,9 @@ let calculateGoals (transactions : _ seq) =
 let parseAmount : _ -> decimal<money> =
     decimal >> (fun x -> x / 1000m) >> LanguagePrimitives.DecimalWithMeasure
 
-let parseCategories categoryGroups =
+let parseCategories (categoryGroups : _ seq) =
     categoryGroups
-    >>= (fun (g : CategoryGroups.CategoryGroup) -> g.Categories)
+    >>= (fun (g : CategoryGroups.CategoryGroup) -> g.Categories |> toSeq)
     |> flip mapi <| fun sortIndex c ->
         c.Id,
         {
@@ -153,8 +153,9 @@ let parseRepetitionRule = function
     | "everyOtherYear" -> Some (fun (x : DateTime) -> x.AddYears 2)
     | x -> failwithf "Unsupported repetition rule %s" x
 
-let parseTransactions categories =
-    bind <| fun (t : ScheduledTransactions.ScheduledTransaction) ->
+let parseTransactions categories (transactions : _ seq) =
+    transactions
+    >>= fun (t : ScheduledTransactions.ScheduledTransaction) ->
         let makeTransaction categoryId = {
             Date = t.DateNext
             Amount = parseAmount t.Amount * -1m
@@ -166,6 +167,7 @@ let parseTransactions categories =
             result (makeTransaction t.CategoryId)
         else
             t.Subtransactions
+            |> toSeq
             |> filter (fun st -> st.Amount < 0)
             |> flip map <| fun st ->
                 makeTransaction st.CategoryId
