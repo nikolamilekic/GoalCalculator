@@ -1,12 +1,30 @@
 version 5.224.0
 storage none
 source https://api.nuget.org/v3/index.json
+source https://ci.appveyor.com/nuget/milekic-yolo
 
-framework: netcoreapp3.1, netstandard2.0, netstandard2.1
+framework: auto-detect
 
 nuget FSharp.Core redirects:on
 nuget FSharp.Data
-nuget Milekic.YoLo prerelease
+nuget Milekic.YoLo prerelease storage: symlink
 nuget Argu
 nuget GitInfo = 2.0.26
 nuget FSharpPlus
+
+// [ FAKE GROUP ]
+group Build
+    storage none
+    source https://api.nuget.org/v3/index.json
+
+    framework: netstandard2.0
+
+    nuget FSharpPlus
+    nuget Fake.Api.GitHub
+    nuget Fake.BuildServer.AppVeyor
+    nuget Fake.Core.ReleaseNotes
+    nuget Fake.Core.Target
+    nuget Fake.DotNet.Cli
+    nuget Fake.IO.FileSystem
+    nuget Fake.IO.Zip
+    nuget Fake.Tools.Git
