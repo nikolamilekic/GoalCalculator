@@ -59,7 +59,17 @@ let expandTransactions lastRelevantDate (transactions : _ seq) =
         |> takeWhile (view Transaction._date >> fun d -> d < lastRelevantDate)
 let calculateGoals transactions =
     let nextMonthStart = DateTime.Now.Date.AddMonths 1 |> getStartOfMonth
-    let lastRelevantDate = nextMonthStart.AddYears 1
+    let numberOfRelevantYears =
+        let lastTransactionDate =
+            transactions
+            |>> view Transaction._date
+            |> Seq.max
+        (lastTransactionDate - nextMonthStart).TotalDays / 365.0
+        |> Math.Ceiling
+        |> int
+    let numberOfRelevantMonths = decimal numberOfRelevantYears * 12m<month>
+
+    let lastRelevantDate = nextMonthStart.AddYears numberOfRelevantYears
 
     expandTransactions lastRelevantDate transactions
     |> groupBy (view Transaction._category)
@@ -82,7 +92,7 @@ let calculateGoals transactions =
         //         printfn "%A %7.2f" t.Date t.Amount)
 
         let averageAssignment =
-            (relevantTransactions^.Transaction._total) / 12m<month>
+            (relevantTransactions^.Transaction._total) / numberOfRelevantMonths
         let allocations =
             relevantTransactions
             |> groupBy (view Transaction._date >> getStartOfMonth)
