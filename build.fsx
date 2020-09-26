@@ -20,7 +20,7 @@ module FinalVersion =
 
     let pathToAssemblyInfoFile =
         lazy
-        !! "src/GoalCalculator/obj/Release/**/GoalCalculator.AssemblyInfo.fs"
+        !! "src/*/obj/Release/**/*.AssemblyInfo.fs"
         |> Seq.head
 
     let (|Regex|_|) pattern input =
@@ -67,17 +67,19 @@ module Clean =
         Shell.cleanDir "publish"
 
 module Build =
-    // nuget Fake.DotNet.Cli
+    //nuget Fake.DotNet.Cli
     //nuget Fake.BuildServer.AppVeyor
+    //nuget Fake.IO.FileSystem
 
     open Fake.DotNet
     open Fake.Core
     open Fake.Core.TargetOperators
     open Fake.BuildServer
+    open Fake.IO.Globbing.Operators
 
     open FinalVersion
 
-    let projectToBuild = "GoalCalculator.sln"
+    let projectToBuild = !! "*.sln" |> Seq.head
 
     Target.create "Build" <| fun _ ->
         DotNet.build id projectToBuild
@@ -103,6 +105,7 @@ module Publish =
     //nuget Fake.IO.Zip
 
     open System.IO
+    open System.Text.RegularExpressions
     open Fake.DotNet
     open Fake.Core
     open Fake.IO
@@ -113,13 +116,25 @@ module Publish =
     open FinalVersion
     open CustomTargetOperators
 
+    let (|Regex|_|) pattern input =
+        let m = Regex.Match(input, pattern)
+        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
+        else None
+
     let projectsToPublish =
-        [ "osx-x64"; "win-x64"; "linux-arm" ]
-        |>> fun runtime ->
-            "src/GoalCalculator",
-            Some "netcoreapp3.1",
-            Some runtime,
-            Some "-p:PublishSingleFile=true -p:PublishTrimmed=true"
+        !! "src/*/*.fsproj"
+        |> Seq.toList
+        >>= fun projectFile ->
+            match File.readAsString projectFile with
+            | Regex "TargetFramework.+(netcoreapp.+)<\/TargetFramework" [ framework ] ->
+                let projectDirectory = Path.GetDirectoryName projectFile
+                [ "osx-x64"; "win-x64"; "linux-arm"; "linux-x64" ]
+                |>> fun runtime ->
+                    projectDirectory,
+                    Some framework,
+                    Some runtime,
+                    Some "-p:PublishSingleFile=true -p:PublishTrimmed=true"
+            | _ -> []
 
     Target.create "Publish" <| fun _ ->
         for (project, framework, runtime, custom) in projectsToPublish do
@@ -177,6 +192,7 @@ module UploadArtifactsToGitHub =
     //nuget Fake.IO.FileSystem
     //nuget Fake.BuildServer.AppVeyor
 
+    open System.IO
     open Fake.Core
     open Fake.Api
     open Fake.IO.Globbing.Operators
@@ -186,7 +202,7 @@ module UploadArtifactsToGitHub =
     open FinalVersion
     open ReleaseNotesParsing
 
-    let productName = "GoalCalculator"
+    let productName = !! "*.sln" |> Seq.head |> Path.GetFileNameWithoutExtension
     let gitOwner = "nikolamilekic"
 
     Target.create "UploadArtifactsToGitHub" <| fun _ ->
@@ -212,17 +228,36 @@ module UploadArtifactsToGitHub =
 module Release =
     //nuget Fake.Tools.Git
 
+    open System.Text.RegularExpressions
+    open Fake.IO
+    open Fake.IO.Globbing.Operators
     open Fake.Core
     open Fake.Tools
 
     open CustomTargetOperators
 
-    let gitHome = "git@github.com:nikolamilekic/GoalCalculator.git"
+    let pathToThisAssemblyFile =
+        lazy
+        !! "src/*/obj/Release/**/ThisAssembly.GitInfo.g.fs"
+        |> Seq.head
+
+    let (|Regex|_|) pattern input =
+        let m = Regex.Match(input, pattern)
+        if m.Success then Some(List.tail [ for g in m.Groups -> g.Value ])
+        else None
+
+    let gitHome =
+        lazy
+        pathToThisAssemblyFile.Value
+        |> File.readAsString
+        |> function
+            | Regex "RepositoryUrl = @\"(.+)\"" [ gitHome ] -> gitHome
+            | _ -> failwith "Could not parse this assembly file"
 
     Target.create "Release" <| fun _ ->
         Git.CommandHelper.directRunGitCommandAndFail
             ""
-            (sprintf "push -f %s HEAD:release" gitHome)
+            (sprintf "push -f %s HEAD:release" gitHome.Value)
 
     [ "Clean"; "Build" ] ==> "Release"
 
