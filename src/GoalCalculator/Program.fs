@@ -1,6 +1,7 @@
 ﻿// Learn more about F# at http://fsharp.org
 
 open System
+open System.Diagnostics
 open System.IO
 open Argu
 open Milekic.YoLo
@@ -9,7 +10,8 @@ open FSharpPlus
 [<NoComparison; NoEquality>]
 type Argument =
     | [<ExactlyOnce>] BudgetId of string
-    | [<ExactlyOnce>] AuthenticationToken of string
+    | AuthenticationToken of string
+    | AuthenticationTokenCommand of string
     | [<NoAppSettings>] Version
     interface IArgParserTemplate with
         member _.Usage = " "
@@ -27,6 +29,22 @@ let reportFilePath =
         "Report.txt")
 
 Directory.CreateDirectory(Path.GetDirectoryName(configFilePath)) |> ignore
+
+let runCommand (command : string) =
+    let words = command.Split (" ")
+    let command = Array.head words
+    let args = words |> Array.skip 1 |> String.concat " "
+    let psi =
+        ProcessStartInfo(
+            command,
+            args,
+            RedirectStandardOutput=true,
+            RedirectStandardError=true)
+    let p = Process.Start(psi)
+    p.WaitForExit()
+    if p.ExitCode = 0
+    then p.StandardOutput.ReadToEnd()
+    else failwith (p.StandardError.ReadToEnd())
 
 [<EntryPoint>]
 let main argv =
@@ -52,7 +70,12 @@ let main argv =
         |> arguments.Parser.PrintAppSettingsArguments
         |> curry File.WriteAllText configFilePath
 
-        let headers = YnabApi.makeHeaders (arguments.GetResult AuthenticationToken)
+        let authenticationToken =
+            match arguments.TryGetResult AuthenticationToken with
+            | Some x -> x
+            | None -> arguments.PostProcessResult(AuthenticationTokenCommand, runCommand)
+
+        let headers = YnabApi.makeHeaders authenticationToken
         let budgetId = arguments.GetResult BudgetId
 
         let categories =
