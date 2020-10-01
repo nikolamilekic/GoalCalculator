@@ -49,8 +49,9 @@ let runCommand (command : string) =
 [<EntryPoint>]
 let main argv =
     printfn
-        "GoalCalculator. Version: %s"
+        "GoalCalculator. Version: %s (%s)"
         (Metadata.getCallingAssemblyInformationalVersion())
+        (DateTimeOffset.Parse(ThisAssembly.Git.CommitDate).ToString("yyyy-MM-dd"))
 
     try
         let arguments =
