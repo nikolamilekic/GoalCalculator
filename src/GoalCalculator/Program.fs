@@ -100,7 +100,7 @@ let main argv =
             let currentGoal = g.Category.Goal |> option (sprintf "%7.2f") "   /   "
             let paddedName = g.Category.Name.PadRight(categoryNameLength)
             sprintf
-                "%s %7.2f %7.2f %s %7.2f"
+                "%s %8.2f %8.2f %s %8.2f"
                 paddedName
                 g.AverageAssignment
                 g.PeakAssignment
