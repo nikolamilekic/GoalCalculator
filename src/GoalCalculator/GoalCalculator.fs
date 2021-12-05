@@ -165,6 +165,8 @@ let parseRepetitionRule = function
 
 let parseTransactions categories (transactions : _ seq) =
     transactions
+    |> Seq.filter (fun (t : ScheduledTransactions.ScheduledTransaction) ->
+        t.CategoryId |> Option.isSome)
     >>= fun (t : ScheduledTransactions.ScheduledTransaction) ->
         let makeTransaction categoryId = {
             Date = t.DateNext
@@ -174,7 +176,7 @@ let parseTransactions categories (transactions : _ seq) =
         }
 
         if t.CategoryName <> "Split (Multiple Categories)..." then
-            result (makeTransaction t.CategoryId)
+            result (makeTransaction (Option.get t.CategoryId))
         else
             t.Subtransactions
             |> toSeq

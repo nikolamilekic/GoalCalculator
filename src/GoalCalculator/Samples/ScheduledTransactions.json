@@ -13,7 +13,7 @@
         "account_name": "N26",
         "payee_id": "fc7bed08-2ef8-4993-b739-e30181ef0e67",
         "payee_name": "Landlord",
-        "category_id": "6e25b46a-b0bd-4cd9-a0fe-564a5be8166c",
+        "category_id": null,
         "category_name": "Rent",
         "transfer_account_id": null,
         "deleted": false,

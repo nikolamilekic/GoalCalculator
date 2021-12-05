@@ -7,6 +7,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{556C3511-F7D
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "GoalCalculator", "src\GoalCalculator\GoalCalculator.fsproj", "{734116A3-8C54-47BE-BFB8-6DA1885EA2C5}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Global", "Global", "{DFAB37FC-A24A-4356-B2E7-7EF141EBDA55}"
+ProjectSection(SolutionItems) = preProject
+	paket.dependencies = paket.dependencies
+	paket.lock = paket.lock
+	GitInfo.txt = GitInfo.txt
+	appveyor.yml = appveyor.yml
+EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
